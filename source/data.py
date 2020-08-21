@@ -412,10 +412,10 @@ class Data(SharedGObject):
             if type(insname) not in (types.StringType, types.UnicodeType):
                 insname = insname.get_name()
 
-            label += ' (%s.%s)' % (insname, info['parameter'])
-
-        if 'units' in info:
-            label += ' [%s]' % info['units']
+            label += ' (%s.%s' % (insname, info['parameter'])
+            if 'units' in info:
+                label += ' [%s]' % info['units']
+            label += ')'
 
         elif 'name' not in info:
             label = 'dim%d' % dim
@@ -599,20 +599,20 @@ class Data(SharedGObject):
             logger = logging.getLogger()
 
             # We remove all handler except the first one.
-            # The first one is, by construction, the streamHandler
+            # The first one is, by construction, the streamHanlder
             # The other should be fileHandler that we want to delete
 
             while len(logger.handlers) > 1:
                 logger.removeHandler(logger.handlers[-1])
 
             # We create a new fileHandler in the data folder
-            logfile = logging.FileHandler(filename=self.get_filepath()[:-3]+'log',
+            file = logging.FileHandler(filename=self.get_filepath()[:-3]+'log',
                                        mode='a+b')
-            logfile.setLevel(logging.INFO)
+            file.setLevel(logging.INFO)
             formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s: %(message)s (%(filename)s:%(lineno)d)',
                                           datefmt='%Y-%m-%d %H:%M')
-            logfile.setFormatter(formatter)
-            logger.addHandler(logfile)
+            file.setFormatter(formatter)
+            logger.addHandler(file)
 
         try:
             if in_qtlab:
