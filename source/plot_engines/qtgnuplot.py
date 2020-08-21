@@ -991,3 +991,4 @@ def plot_file(filename, name='plot', update=True, clear=False, **kwargs):
     p.add_file(filename, **kwargs)
     if update:
         p.update()
+

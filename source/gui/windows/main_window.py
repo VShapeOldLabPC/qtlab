@@ -110,12 +110,12 @@ class MainWindow(qtwindow.QTWindow):
             return False
 
         label = gtk.Label("""
-You are closing the QTLab GUI.
+            You are closing the QTLab GUI.
 
-If you want to reopen it, run qt.flow.start_gui()
-from the shell, or run the qtlabgui[.bat] script
-in the QTLab folder.
-""")
+            If you want to reopen it, run qt.flow.start_gui()
+            from the shell, or run the qtlabgui[.bat] script
+            in the QTLab folder.
+            """)
         label.set_line_wrap(True)
 
         checkbox = gtk.CheckButton("Do not show this message again.")
@@ -171,4 +171,3 @@ in the QTLab folder.
         qt.replot_all()
 
 Window = MainWindow
-

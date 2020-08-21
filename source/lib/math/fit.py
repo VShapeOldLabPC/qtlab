@@ -20,6 +20,7 @@
 import numpy as np
 from scipy.optimize import leastsq
 from numpy.random import rand
+from scipy.misc import factorial as factoriel
 import code
 import copy
 
@@ -30,6 +31,7 @@ WEIGHT_SQRTN    = 3
 WEIGHT_SQRTN2   = 4
 WEIGHT_N        = 5
 WEIGHT_LOGN     = 6
+WEIGHT_LEN      = 7
 
 # Symbolic description of functions for the future.
 def eval_func(codestr, **kwargs):
@@ -83,6 +85,8 @@ class Function:
             self._yerr = np.abs(self._ydata)
         elif self._weight == WEIGHT_LOGN:
             self._yerr = np.log(np.abs(self._ydata))
+        elif self._weight == WEIGHT_LEN:
+            self._yerr = (1.+np.arange(len(self._xdata)))
 
         # Set minimum errors
         if self._yerr is not None and self._minerr is not None:
@@ -313,6 +317,56 @@ class Gaussian(Function):
         ret = p[0] + p[1] / p[3] / np.sqrt(np.pi / 2) * np.exp(-2*(x - p[2])**2 / p[3]**2)
         return ret
 
+class DoubleGaussian(Function):
+    '''
+    Gaussian fit function:
+                       ⎛           2   ⎞
+              ___      ⎜ -2⋅(-c + x)   ⎜
+            ╲╱ 2 ⋅b⋅exp⎜ ───────────── ⎜
+                       ⎜        2      ⎜
+                       ⎝      d        ⎠
+        a + ───────────────────────────── +
+                            ___
+                          ╲╱ π ⋅d
+
+     parameters:
+        background
+        area
+        position
+        full width at (exp^(-0.5) = 0.607)
+        area2
+        position2
+        full width at (exp^(-0.5) = 0.607)2
+    '''
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('nparams', 7)
+        Function.__init__(self, *args, **kwargs)
+
+    def get_fwhm(self, p=None):
+        if p is None:
+            p = self._fit_params
+        return np.sqrt(2 * np.log(2)) * p[3]
+
+    def get_height(self, p=None):
+        '''Return height (from background).'''
+        if p is None:
+            p = self._fit_params
+        return p[1] / p[3] / np.sqrt(np.pi/2)
+
+    def get_area(self, p=None):
+        if p is None:
+            p = self._fit_params
+        return p[1]
+
+    def func(self, p, x=None):
+        p, x = self.get_px(p, x)
+        ret = p[0] + p[1] / p[3] /\
+            np.sqrt(np.pi / 2) * np.exp(-2*(x - p[2])**2 / p[3]**2) + \
+             p[4] / p[6] / np.sqrt(np.pi / 2) * np.exp(-2*(x - p[5])**2 / p[6]**2)
+
+        return ret
+
 class GaussianPlain(Function):
     '''
     Gaussian fit function:
@@ -450,7 +504,7 @@ class LinearSin(Function):
 class Exponential(Function):
     '''
     Exponential fit function:
-        a + b⋅exp(d⋅(x -c))
+        a + b⋅exp(-d⋅(x -c))
 
      parameters:
         background
@@ -491,7 +545,7 @@ class Sine(Function):
         ret = np.ones_like(x) * p[0] + p[1] * np.sin(x * p[2] + p[3])
         return ret
 
-class S21dB(Function):
+class S21dB_dip_asymetric(Function):
     '''
     Asymetrical S21 function.
     See Étienne Dumur thesis manuscript appendix B.
@@ -546,6 +600,113 @@ class S21dB(Function):
 
             return y.imag
 
+class S21dB_pic_amplitude(Function):
+    '''
+    resonance S21 pic function. Only in amplitude.
+    parameters:
+        Internal quality factor
+        External quality factor
+        Resonance frequency [GHz]
+        background
+    '''
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('weight', WEIGHT_EQUAL)
+        kwargs.setdefault('nparams', 4)
+        Function.__init__(self, *args, **kwargs)
+
+    def func(self, p, x=None):
+        p, x = self.get_px(p, x)
+
+        Qi = p[0]
+        Qc = p[1]
+        f0 = p[2]
+        background = p[3]
+
+        y = 1. /(1. + 2.*1j*Qc*(x-f0)/f0 + Qc/Qi)
+        # we have to check about signs
+        return abs(y) +background
+
+class Transmission_PL(Function):
+    '''
+    resonance S21 pic function. Only in amplitude.
+    parameters:
+        kappa_ext [GHz]
+        kappa_loss [GHz]
+        Resonance frequency [GHz]
+        attenuation
+    '''
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('weight', WEIGHT_EQUAL)
+        kwargs.setdefault('nparams', 5)
+        Function.__init__(self, *args, **kwargs)
+
+    def func(self, p, x=None):
+        p, x = self.get_px(p, x)
+
+        kappa_1 = p[0]
+        kappa_2 = p[0]
+        kappa_loss = p[2]
+        f0 = p[3]
+        bg = p[4]
+
+        y = 2.*np.sqrt(kappa_1*kappa_2) /(kappa_1+kappa_2+kappa_loss -2j*(x-f0))
+        return abs(y)+bg
+
+class dip_lorentzian_amplitude(Function):
+    '''
+    resonance S21 pic function. Only in amplitude.
+    parameters:
+        Internal quality factor
+        External quality factor
+        Resonance frequency [GHz]
+        background
+    '''
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('weight', WEIGHT_EQUAL)
+        kwargs.setdefault('nparams', 4)
+        Function.__init__(self, *args, **kwargs)
+
+    def func(self, p, x=None):
+        p, x = self.get_px(p, x)
+
+        Qi = p[0]
+        Qc = p[1]
+        f0 = p[2]
+        background = p[3]
+
+        y = 1. /(1. + 2.*1j*Qc*(x-f0)/f0 + Qc/Qi)
+        # we have to check about signs
+        return -abs(y) +background
+
+class dip_lorentzian_cauchy(Function):
+    '''
+    resonance dip function. Only in amplitude.
+    parameters:
+        FWHM
+        Resonance frequency [GHz]
+        background
+    '''
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('weight', WEIGHT_EQUAL)
+        kwargs.setdefault('nparams', 4)
+        Function.__init__(self, *args, **kwargs)
+
+    def func(self, p, x=None):
+        p, x = self.get_px(p, x)
+
+        fwhm = p[0]
+        f0 = p[1]
+        background = p[2]
+        amplitude = p[3]
+
+        y = amplitude*2. /np.pi/fwhm/(1. + 4.*(x-f0)**2/fwhm**2 )
+        # we have to check about signs
+        return -y + background
+
 class ExponentialDecaySine(Function):
     '''
     Sine fit function:
@@ -567,6 +728,307 @@ class ExponentialDecaySine(Function):
     def func(self, p, x=None):
         p, x = self.get_px(p, x)
         ret = np.ones_like(x) * p[0] + p[1] * np.sin(x * p[2] + p[3])*np.exp(-x/p[4])
+        return ret
+
+class ExponentialDecayDoubleSine(Function):
+    '''
+    Sine fit function:
+        a + (b⋅sin(x⋅c + d)+b1⋅sin(x⋅c1 + d1))⋅exp(-x/e)
+
+     parameters:
+        background
+        amplitude0
+        pulsation0
+        phi0
+        amplitude1
+        pulsation1
+        phi1
+        decay time
+    '''
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('weight', WEIGHT_EQUAL)
+        kwargs.setdefault('nparams', 8)
+        Function.__init__(self, *args, **kwargs)
+
+    def func(self, p, x=None):
+        p, x = self.get_px(p, x)
+        ret = np.ones_like(x) * p[0] + (p[1] * np.sin(x * p[2] + p[3])+ p[4] * np.sin(x * p[5] + p[6]))*np.exp(-x/p[7])
+        return ret
+
+class Fit3D_lineartest(Function):
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('weight', WEIGHT_EQUAL)
+        kwargs.setdefault('nparams', 3)
+        Function.__init__(self, *args, **kwargs)
+        # self._weight = weight
+        # self._minerr = minerr
+        # self.set_data(x, y, z)
+
+    def set_data3D(self, x, y, z, xerr=None, yerr=None, zerr=None):
+        # Pretend z = y for 2D case
+        self.set_data(x, z, yerr=zerr)
+        self._zdata = self._ydata
+        self._zerr = self._yerr
+        self._ydata = y
+        self._yerr = yerr
+
+    def func(self, p, x=None, y=None):
+        p, x = self.get_px(p, x)
+        y = self._ydata
+
+        ret = p[0] + p[1]*x + p[2]*y
+        return ret
+
+    def err_func(self, p):
+        residuals = np.abs(self._zdata - self.func(p)) / self._zerr
+        return residuals
+
+class Fit3D_lineshape(Function):
+    '''
+    parameters:
+        background
+        qubit frequency [Hz]
+        T_phi [s]
+        kappa [Hz]
+        Xi [Hz]
+        alpha (conversion between power and photon number)
+        amp
+    '''
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('weight', WEIGHT_EQUAL)
+        kwargs.setdefault('nparams', 5)
+        Function.__init__(self, *args, **kwargs)
+        self.N_sum = 1
+
+    def set_data3D(self, x, y, z, xerr=None, yerr=None, zerr=None):
+        # Pretend z = y for 2D case
+        self.set_data(x, z, yerr=zerr)
+        self._zdata = self._ydata
+        self._zerr = self._yerr
+        self._ydata = y
+        self._yerr = yerr
+
+    def set_N_sum(self,n):
+        self.N_sum = n
+
+    def func(self, p, x=None, y=None):
+        p, x = self.get_px(p, x)
+        y = self._ydata
+        ret = 0.
+
+        f0 = p[0]
+        T2 = p[1]
+        kappa = p[2]
+        Xi = p[3]
+        Lambda = p[4]
+
+        conv = kappa/2 /((kappa/2)**2 + Xi**2) *Lambda
+        n = conv*y
+        theta2 = (2*Xi/kappa)**2
+        for j in np.arange(self.N_sum):
+            # ret += (-1)**j /np.math.factorial(j) \
+            #         *(4*p[3]/p[2]*np.sqrt(conv*y + p[5]))**(2*j) \
+            #         *(1/p[1] + np.pi*p[2]*( 4*p[3]/p[2]*np.sqrt(conv*y +p[5]) )**2 + j )\
+            #         /( 4*np.pi**2*(x - p[0] + (2*conv*y +2*p[5]+ 1)*p[3] )**2  \
+            #         + (1/p[1] + np.pi*p[2]*(4*p[3]/p[2]*np.sqrt(conv*y+p[5]))**2 + j)**2  )
+
+            ret = ret + (-4.*theta2*n)**j/np.math.factorial(j)*(1./T2 + kappa*(2*theta2*n + j/2.) )/( (2*np.pi*(x - f0) -(2*n+1)*Xi )**2 + (1./T2 + kappa*(2*theta2*n + j/2.) )**2  )
+
+        return - ret/np.pi
+
+    def err_func(self, p):
+        residuals = np.abs(self._zdata - self.func(p)) / self._zerr
+        return residuals
+
+# class acstark_lineshape(Function):
+#     def __init__(self, *args, **kwargs):
+#         kwargs.setdefault('weight', WEIGHT_EQUAL)
+#         kwargs.setdefault('nparams', 6)
+#         Function.__init__(self, *args, **kwargs)
+#         self.N_sum = 1
+#
+#     def set_N_sum(self,n):
+#         self.N_sum = n
+#
+#     def func(self, p, x=None):
+#         p, x = self.get_px(p, x)
+#         ret = 0.
+#         f0 = p[0]
+#         T2 = 8.5e-6
+#         # p[1]
+#         kappa = 2*np.pi*5e6
+#         # p[2]
+#         Xi = p[3]
+#         n = p[4]
+#         theta2 = (2*Xi/kappa)**2
+#
+#         # version 1: computing factorial can be pretty slow
+#         for j in np.arange(self.N_sum):
+#
+#             ret = ret + (-4.*theta2*n)**j/factoriel(j)*(1./T2 + kappa*(2*theta2*n + j/2.) )/( (2*np.pi*(x - f0) +(2*n+1)*Xi )**2 + (1./T2 + kappa*(2*theta2*n + j/2.) )**2  )
+#
+#         # version 2: testing a mathematical trick
+#         # for j in np.arange(self.N_sum):
+#         #     if j > 1:
+#         #         Log_fact = 0.
+#         #         for jj in np.arange(j):
+#         #             Log_fact += np.log(jj+1)
+#         #         facto = np.exp(Log_fact)
+#         #         ret = ret + (-4.*theta2*n)**j/facto*(1./T2 + kappa*(2*theta2*n + j/2.) )/( (2*np.pi*(x - f0) +(2*n+1)*Xi )**2 + (1./T2 + kappa*(2*theta2*n + j/2.) )**2  )
+#         #
+#         #     else:
+#         #         ret = ret + (-4.*theta2*n)**j*(1./T2 + kappa*(2*theta2*n + j/2.) )/( (2*np.pi*(x - f0) +(2*n+1)*Xi )**2 + (1./T2 + kappa*(2*theta2*n + j/2.) )**2  )
+#
+#         return - ret/np.pi/p[5]/p[1]
+
+class acstark_lineshape(Function):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('weight', WEIGHT_EQUAL)
+        kwargs.setdefault('nparams', 3)
+        Function.__init__(self, *args, **kwargs)
+        self.N_sum = 1
+        self.f0 = 2.05015e9
+        self.T2 = 8.5e-6
+        self.kappa = 2*np.pi*5e6
+    def set_f0(self,f0):
+        self.f0 = f0
+
+    def set_T2(self,T2):
+        self.T2 = T2
+    def set_kappa(self,kappa):
+        self.kappa = kappa
+    def set_N_sum(self,n):
+        self.N_sum = n
+
+    def func(self, p, x=None):
+        p, x = self.get_px(p, x)
+        ret = 0.
+        f0 = self.f0
+        T2 = self.T2
+        # p[1]
+        kappa = self.kappa
+        # p[2]
+        Xi = p[0]
+        n = p[1]
+        theta2 = (2*Xi/kappa)**2
+
+        # version 1: computing factorial can be pretty slow
+        for j in np.arange(self.N_sum):
+
+            ret = ret + (-4.*theta2*n)**j/factoriel(j)*(1./T2 + kappa*(2*theta2*n + j/2.) )/( (2*np.pi*(x - f0) +(2*n+1)*Xi )**2 + (1./T2 + kappa*(2*theta2*n + j/2.) )**2  )
+
+        # version 2: testing a mathematical trick
+        # for j in np.arange(self.N_sum):
+        #     if j > 1:
+        #         Log_fact = 0.
+        #         for jj in np.arange(j):
+        #             Log_fact += np.log(jj+1)
+        #         facto = np.exp(Log_fact)
+        #         ret = ret + (-4.*theta2*n)**j/facto*(1./T2 + kappa*(2*theta2*n + j/2.) )/( (2*np.pi*(x - f0) +(2*n+1)*Xi )**2 + (1./T2 + kappa*(2*theta2*n + j/2.) )**2  )
+        #
+        #     else:
+        #         ret = ret + (-4.*theta2*n)**j*(1./T2 + kappa*(2*theta2*n + j/2.) )/( (2*np.pi*(x - f0) +(2*n+1)*Xi )**2 + (1./T2 + kappa*(2*theta2*n + j/2.) )**2  )
+
+        return - ret/np.pi/p[2]/T2
+        # return - ret/np.pi/0.1/T2
+
+class acstark_lineshape_v2(Function):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('weight', WEIGHT_EQUAL)
+        kwargs.setdefault('nparams', 2)
+        Function.__init__(self, *args, **kwargs)
+        self.N_sum = 1
+        self.f0 = 2.05015e9
+        self.T2 = 8.5e-6
+        self.kappa = 2*np.pi*5e6
+        self.n = 0
+    def set_f0(self,f0):
+        self.f0 = f0
+
+    def set_T2(self,T2):
+        self.T2 = T2
+    def set_kappa(self,kappa):
+        self.kappa = kappa
+    def set_N_sum(self,n):
+        self.N_sum = n
+
+    def set_n(self, n):
+        self.n = n
+    def func(self, p, x=None):
+        p, x = self.get_px(p, x)
+        ret = 0.
+        f0 = self.f0
+        T2 = self.T2
+
+        # p[1]
+        kappa = self.kappa
+        # p[2]
+        Xi = p[0]
+        n = self.n
+        theta2 = (2*Xi/kappa)**2
+
+        # version 1: computing factorial can be pretty slow
+        for j in np.arange(self.N_sum):
+
+            ret = ret + (-4.*theta2*n)**j/factoriel(j)*(1./T2 + kappa*(2*theta2*n + j/2.) )/( (2*np.pi*(x - f0) +(2*n+1)*Xi )**2 + (1./T2 + kappa*(2*theta2*n + j/2.) )**2  )
+
+        # version 2: testing a mathematical trick
+        # for j in np.arange(self.N_sum):
+        #     if j > 1:
+        #         Log_fact = 0.
+        #         for jj in np.arange(j):
+        #             Log_fact += np.log(jj+1)
+        #         facto = np.exp(Log_fact)
+        #         ret = ret + (-4.*theta2*n)**j/facto*(1./T2 + kappa*(2*theta2*n + j/2.) )/( (2*np.pi*(x - f0) +(2*n+1)*Xi )**2 + (1./T2 + kappa*(2*theta2*n + j/2.) )**2  )
+        #
+        #     else:
+        #         ret = ret + (-4.*theta2*n)**j*(1./T2 + kappa*(2*theta2*n + j/2.) )/( (2*np.pi*(x - f0) +(2*n+1)*Xi )**2 + (1./T2 + kappa*(2*theta2*n + j/2.) )**2  )
+
+        return - ret/np.pi/p[1]/T2
+        # return - ret/np.pi/0.1/T2
+
+class Lorentzian_sum(Function):
+    '''
+    Remy
+    Lorentzian fit function:
+                   2⋅b⋅d
+        a + ───────────────────
+              ⎛ 2            2⎞
+            π⋅⎝d  + 4⋅(x - c) ⎠
+
+     parameters:
+        background
+        area
+        position
+        width
+
+    '''
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('nparams', 4)
+        Function.__init__(self, *args, **kwargs)
+
+    def get_fwhm(self, p=None):
+        if p is None:
+            p = self._fit_params
+        return p[3]
+
+    def get_height(self, p=None):
+        '''Return height (from background).'''
+        if p is None:
+            p = self._fit_params
+        return 2 / np.pi / p[3] * p[1]
+
+    def get_area(self, p=None):
+        if p is None:
+            p = self._fit_params
+        return p[1]
+
+    def func(self, p, x=None):
+        p, x = self.get_px(p, x)
+        ret = np.ones_like(x) * p[0] + 2 * p[1] / np.pi * p[3] / (4*(x - p[2])**2 + p[3]**2)
         return ret
 
 class NISTRationalHahn(Function):

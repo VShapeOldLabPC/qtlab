@@ -862,6 +862,7 @@ class Instrument(SharedGObject):
             types.BooleanType: bool,
             types.TupleType: tuple,
             types.ListType: list,
+            types.DictType: dict,
             np.ndarray: lambda x: x.tolist(),
     }
 

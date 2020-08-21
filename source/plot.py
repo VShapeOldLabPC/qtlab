@@ -463,22 +463,44 @@ class Plot2DBase(Plot):
         if dt < self._refreshrate:
             return
 
-        if x_err is None:
-            x_err = np.zeros_like(x)
-
-        if y_err is None:
-            y_err = np.zeros_like(y)
+        # if x_err is None:
+        #     x_err = numpy.zeros_like(x)
+        #
+        # if y_err is None:
+        #     y_err = numpy.zeros_like(y)
 
         # Use inline plot command
-        self.cmd('plot \'-\' using 1:2:3:4 with xyerrorbars')
+        # self.cmd('plot \'-\' using 1:2:3:4 with xyerrorbars')
+        self.cmd('plot \'-\' using 1:2')
+
 
         for x, y in zip(x, y):
-            self.cmd(str(x)+' '+str(y)+' '+str(x - x_err)+' '+str(x + x_err)+' '+str(y - y_err)+' '+str(y + y_err))
+            # self.cmd(str(x)+' '+str(y)+' '+str(x - x_err)+' '+str(x + x_err)+' '+str(y - y_err)+' '+str(y + y_err))
+            self.cmd(str(x)+' '+str(y))
 
         self.cmd('eof')
 
         self._last_update = time.time()
 
+    def replace_inline_data_y2(self, x, y, y2):
+        '''
+            Replace the current curve by the data parameter.
+        '''
+
+
+        dt = time.time() - self._last_update
+        if dt < self._refreshrate:
+            return
+
+        self.cmd('plot \'-\' using 1:2, \'-\' using 1:3')
+
+
+        for x, y, y2 in zip(x, y, y2):
+            # self.cmd(str(x)+' '+str(y)+' '+str(x - x_err)+' '+str(x + x_err)+' '+str(y - y_err)+' '+str(y + y_err))
+            self.cmd(str(x)+' '+str(y)+' '+str(y2))
+
+        self.cmd('eof')
+        self._last_update = time.time()
 
     def add(self, *args, **kwargs):
         '''
